@@ -2,6 +2,9 @@ import { expect, test } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { zipSync, strToU8 } from 'fflate'
 import { htmlBlocks, importText, Importer } from '../src/main/imports'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 test('text titles, empty rejection, independent IDs and stable duplicate fingerprint', () => {
   expect(() => importText(' \n', '', 'zh-en')).toThrow('正文')
@@ -23,8 +26,10 @@ const epub = (extra: Record<string, Uint8Array> = {}) => zipSync({
   'OPS/book.opf': strToU8('<package xmlns:dc="urn:dc"><metadata><dc:title>A book</dc:title></metadata><manifest><item id="one" href="one.xhtml"/></manifest><spine><itemref idref="one"/></spine></package>'),
   'OPS/one.xhtml': strToU8('<html><body><h1>One</h1><p>Read me.</p></body></html>'), ...extra
 })
-test('EPUB keeps spine chapters, detects corruption and encrypted/fixed layouts', async () => {
-  const importer = new Importer('/private/tmp/ling-import-test-assets')
+test('EPUB keeps spine chapters, detects corruption and encrypted/fixed layouts', async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), 'ling-import-test-'))
+  onTestFinished(() => rm(directory, { recursive: true, force: true }))
+  const importer = new Importer(join(directory, 'assets'))
   const book = await importer.epubBytes(epub(), 'test.epub', 'zh-en')
   expect(book.title).toBe('A book'); expect(book.chapters[0].title).toBe('One')
   await expect(importer.epubBytes(new Uint8Array([1]), 'bad.epub', 'zh-en')).rejects.toThrow('损坏')

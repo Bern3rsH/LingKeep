@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,6 +23,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Check release version
+        if: github.ref_type == 'tag'
         run: node --input-type=module -e 'import assert from "node:assert/strict"; import fs from "node:fs"; const pkg=JSON.parse(fs.readFileSync("package.json")); assert.equal(process.env.GITHUB_REF_NAME, `v${pkg.version}`); assert(fs.readFileSync("release-notes.md", "utf8").startsWith(`# v${pkg.version}\n`));'
       - name: Generate complete offline dictionaries
         run: npm run dictionaries
@@ -94,6 +96,7 @@ jobs:
 
   publish:
     needs: package
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
