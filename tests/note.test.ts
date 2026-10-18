@@ -1,0 +1,45 @@
+import { expect, test } from 'vitest'
+import { decodeNoteDraft, editNoteDraft, encodeNoteDraft, regenerateNoteDraft, validNoteRanges } from '../src/shared/note'
+
+test('regeneration replaces generated text and its separators without repeating old explanations', () => {
+  const first = regenerateNoteDraft({ text: 'Manual note', ai: [] }, 'First explanation')
+  const second = regenerateNoteDraft(first, 'Second explanation')
+  expect(second.text).toBe('Manual note\n\nSecond explanation')
+  expect(regenerateNoteDraft(second, 'Third').text).toBe('Manual note\n\nThird')
+  expect(regenerateNoteDraft({ text: '', ai: [] }, 'Only AI').text).toBe('Only AI')
+})
+test('handwritten edits anywhere survive regeneration while unchanged generated text is removed', () => {
+  const first = regenerateNoteDraft({ text: 'Manual', ai: [] }, 'Old explanation')
+  const prefixed = editNoteDraft(first, 'Prefix Manual\n\nOld explanation')
+  const inserted = editNoteDraft(prefixed, 'Prefix Manual\n\nOld [personal] explanation')
+  const edited = editNoteDraft(inserted, 'Prefix Manual\n\nOld [personal] explanation\nSuffix')
+  expect(validNoteRanges(edited.text, edited.ai)).toBe(true)
+  const next = regenerateNoteDraft(edited, 'New explanation')
+  expect(next.text).toContain('Prefix Manual')
+  expect(next.text).toContain('[personal]')
+  expect(next.text).toContain('Suffix')
+  expect(next.text).not.toContain('Old')
+  expect(next.text.match(/New explanation/g)).toHaveLength(1)
+})
+test('deleting or fully rewriting generated content makes new input manual', () => {
+  const first = regenerateNoteDraft({ text: '', ai: [] }, 'Generated')
+  const cleared = editNoteDraft(first, '')
+  expect(cleared).toEqual({ text: '', ai: [] })
+  const rewritten = editNoteDraft(first, 'Personal explanation')
+  expect(regenerateNoteDraft(rewritten, 'New AI').text).toContain('Personal explanation')
+  expect(validNoteRanges(rewritten.text, rewritten.ai)).toBe(true)
+})
+test('editing emoji with a shared surrogate preserves whole manually typed characters', () => {
+  const first = regenerateNoteDraft({ text: '', ai: [] }, '🌍')
+  const edited = editNoteDraft(first, '🌎')
+  expect(edited).toEqual({ text: '🌎', ai: [] })
+  expect(regenerateNoteDraft(edited, 'New').text).toBe('🌎\n\nNew')
+})
+test('source metadata roundtrips while legacy drafts and damaged metadata retain text', () => {
+  const draft = regenerateNoteDraft({ text: 'Manual', ai: [] }, 'AI')
+  expect(decodeNoteDraft(encodeNoteDraft(draft))).toEqual(draft)
+  expect(decodeNoteDraft('Existing plain draft')).toEqual({ text: 'Existing plain draft', ai: [] })
+  expect(decodeNoteDraft('{"noteDraftVersion":1,"text":"Preserve","ai":[null]}')).toEqual({ text: 'Preserve', ai: [] })
+  expect(validNoteRanges('abc', [{ start: 2, end: 4 }])).toBe(false)
+  expect(validNoteRanges('abc', [{ start: 0, end: 2 }, { start: 1, end: 3 }])).toBe(false)
+})

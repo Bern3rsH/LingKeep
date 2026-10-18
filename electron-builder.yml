@@ -1,0 +1,35 @@
+appId: com.lingkeep.app
+productName: LingKeep
+artifactName: LingKeep-${version}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - resources/dictionaries/**/*
+asarUnpack:
+  - node_modules/@napi-rs/**/*
+mac:
+  category: public.app-category.education
+  icon: build/icon.png
+  target:
+    - dmg
+    - zip
+win:
+  icon: build/icon.png
+  artifactName: LingKeep-${version}-win-${arch}.${ext}
+  target:
+    - nsis
+    - zip
+    - portable
+nsis:
+  artifactName: LingKeep-${version}-${arch}.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LingKeep
+portable:
+  artifactName: LingKeep-${version}-${arch}-portable.${ext}
+publish: null

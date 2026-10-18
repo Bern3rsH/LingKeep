@@ -1,0 +1,15 @@
+node_modules/
+out/
+dist/
+.cache/
+resources/dictionaries/*.json.gz
+resources/dictionaries/manifest.json
+*.log
+.DS_Store
+release/
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx

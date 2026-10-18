@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check release version
+        run: node --input-type=module -e 'import assert from "node:assert/strict"; import fs from "node:fs"; const pkg=JSON.parse(fs.readFileSync("package.json")); assert.equal(process.env.GITHUB_REF_NAME, `v${pkg.version}`); assert(fs.readFileSync("release-notes.md", "utf8").startsWith(`# v${pkg.version}\n`));'
+      - name: Generate complete offline dictionaries
+        run: npm run dictionaries
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dictionaries
+          path: resources/dictionaries/
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: mac
+            arch: arm64
+            resources: release/mac-arm64/LingKeep.app/Contents/Resources
+            executable: release/mac-arm64/LingKeep.app/Contents/MacOS/LingKeep
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
+            resources: release/mac/LingKeep.app/Contents/Resources
+            executable: release/mac/LingKeep.app/Contents/MacOS/LingKeep
+          - os: windows-latest
+            platform: win
+            arch: x64
+            resources: release/win-unpacked/resources
+            executable: release/win-unpacked/LingKeep.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: dictionaries
+          path: resources/dictionaries
+      - run: npm run build
+      - name: Build installers
+        run: npx --no-install electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify packaged resources
+        run: npm run check:package -- "${{ matrix.resources }}"
+      - name: Verify native canvas and real PDF import/rendering
+        shell: bash
+        run: '"${{ matrix.executable }}" scripts/check-package-runtime.cjs "${{ matrix.resources }}"'
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+      - name: Launch packaged application with isolated data
+        run: npm run smoke:package -- "${{ matrix.executable }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: artifacts
+      - name: Validate artifacts and generate checksums
+        working-directory: artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for NAME in "LingKeep-$VERSION-arm64.dmg" "LingKeep-$VERSION-arm64.zip" "LingKeep-$VERSION-x64.dmg" "LingKeep-$VERSION-x64.zip" "LingKeep-$VERSION-x64.exe" "LingKeep-$VERSION-x64-portable.exe" "LingKeep-$VERSION-win-x64.zip"; do
+            test -s "$NAME"
+          done
+          sha256sum *.dmg *.zip *.exe *.blockmap > SHA256SUMS.txt
+      - name: Publish GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag --title "LingKeep $GITHUB_REF_NAME" --notes-file release-notes.md --latest
+        env:
+          GH_TOKEN: ${{ github.token }}
