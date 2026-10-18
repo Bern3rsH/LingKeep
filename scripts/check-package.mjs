@@ -7,6 +7,7 @@ import asar from '@electron/asar'
 const directory = process.argv[2]
 assert(directory, 'Usage: npm run check:package -- <packaged resources directory>')
 const archive = join(directory, 'app.asar')
+const extractFile = relativePath => asar.extractFile(archive, join(...relativePath.split('/')))
 const paths = asar.listPackage(archive).map(path => path.replaceAll('\\', '/').replace(/^\//, ''))
 for (const path of ['out/main/index.js', 'out/preload/index.cjs', 'out/renderer/index.html',
   'node_modules/pdfjs-dist/legacy/build/pdf.mjs', 'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
@@ -16,9 +17,9 @@ for (const path of ['out/main/index.js', 'out/preload/index.cjs', 'out/renderer/
 for (const folder of ['cmaps', 'standard_fonts', 'wasm']) {
   assert(paths.some(path => path.startsWith(`node_modules/pdfjs-dist/${folder}/`)), `Missing PDF ${folder}`)
 }
-const manifest = JSON.parse(asar.extractFile(archive, 'resources/dictionaries/manifest.json'))
+const manifest = JSON.parse(extractFile('resources/dictionaries/manifest.json'))
 for (const [name, entry] of Object.entries(manifest.dictionaries)) {
-  const bytes = asar.extractFile(archive, `resources/dictionaries/${name}.json.gz`)
+  const bytes = extractFile(`resources/dictionaries/${name}.json.gz`)
   assert.equal(createHash('sha256').update(bytes).digest('hex'), entry.sha256, `${name} checksum mismatch`)
   assert(entry.entries > 50_000, `${name} dictionary is incomplete`)
 }
@@ -34,7 +35,7 @@ async function nativeFiles(directory) {
 const binaries = await nativeFiles(join(directory, 'app.asar.unpacked', 'node_modules', '@napi-rs'))
 assert(binaries.length > 0, 'Missing unpacked native PDF canvas module')
 for (const path of binaries) assert((await stat(path)).size > 0, `Empty native module: ${path}`)
-const metadata = JSON.parse(asar.extractFile(archive, 'package.json'))
+const metadata = JSON.parse(extractFile('package.json'))
 const source = JSON.parse(await readFile(new URL('../package.json', import.meta.url)))
 assert.equal(metadata.version, source.version)
 assert(!paths.some(path => /(^|\/)(state\.json|\.env|\.cache)(\/|$)/.test(path)), 'Local data included in package')
